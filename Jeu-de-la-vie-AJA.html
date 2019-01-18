@@ -1,0 +1,456 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>Le Jeu De La Vie - By Anthony Jaspers RIL2015</title>
+    </head>
+    <body>
+        <h3>Le Jeu de la Vie - Anthony Jaspers RIL2015</h3>
+        <fieldset><legend>Reglages</legend>		
+			Largeur <input type="number" id="Largeur" value='100' oninput="KeepRatio('x')"/> 
+			Hauteur <input type="number" id="Hauteur" value='50' oninput="KeepRatio('y')"/> 
+			Proba de départ <input type="number" min="0" max="1" id="proba" value="0.15" step="0.05" /> 
+			<button type="button" id="generer" onclick="Generer()"><b>Start</b></button>
+			<br/>
+			Test patterns : 
+			<button type="button" class="debug" onclick="testVoisin(1)">Test 1</button>
+			<button type="button" class="debug" onclick="testVoisin(2)">Test 2</button>
+			<button type="button" class="debug" onclick="testVoisin(3)">Pulsar</button>
+			<button type="button" class="debug" onclick="testVoisin(4)">Glider</button>
+			<button type="button" class="debug" onclick="testVoisin(5)">Spaceship</button>
+			<br/>
+			<button type="button" onclick="Stop(true)"><b>Stop</b></button>(<- Si clignotements ou traitement trop long)
+			<br/>
+			Vitesse : <input type="range" min="1" max="100" value="50" class="slider" id="speedrange" oninput="ChangeSpeed(this.value)">
+			<span id="speed"></span>
+		</fieldset>
+		
+        <canvas id="myCanvas" style="border:1px solid #000000;background:#dffff0"></canvas>
+
+        <fieldset><legend>Statistiques : </legend>
+			<p><span id="nbGen"></span><br/>
+			<span id="nbVie"></span><br/>
+			<span id="nbMourant"></span></p>
+        </fieldset>
+    </body>
+    <script>
+        /*
+        DESCRIPTION ET ORDRE D'APPEL DES FONCTIONS
+        1) Generer()
+        Appelé par le onclick du bouton "Générer"
+        Définit quelques caractéristiques de la grille, crée la première génération, et lance le cycle de la vie
+        
+        1-1) dayOne()
+        Génère le tableau de données pour la grille et le remplit avec des données aléatoires (selon un indice de probabilité fourni)
+        
+        1-2) LifeIsRandom()
+        Définit l'état de vie ou de mort selon une valeur aléatoire. Est appelé pour chaque cellule à la première génération.
+        
+        2) HistoireDeLaVie()
+        Le cycle de la vie, génération 2 jusqu'à n générations.
+        Une variable stopGen interromps le cycle si besoin
+        
+        2-1) NewGeneration()
+        Va lancer l'analyse de la génération en cours et le modifier pour définir les nouveaux états vivant/mourant/morts
+        Affiche également quelques statistiques sur la page
+        
+        2-1-1) Voisinage()
+        Lancé sur chaque cellule. Va compter le nombre de voisins vivants pour le traitement dans NewGeneration.
+        
+        2-2) DrawMyLife()
+        Dessin de la grille et passage des états mourants vers mort et naissants vers vie
+        
+        [Hors processus normal]
+        TestVoisins()
+        Simulation d'une situation alternante stable, pour vérifier les règles du jeu de la vie
+        
+        Stop()
+        Gere l'état des boutons et interromps les cycles en cours
+        */
+
+        
+        //Configuration des paramètres du jeu
+        var CanvasH=500; //Taille canvas (Height / Width)
+        var CanvasW=1000;
+        var vit=150; //Vitesse génération
+		ChangeSpeed(document.getElementById("speedrange").value);
+        
+        //Variables globales
+        var c = document.getElementById("myCanvas");
+        var ctx = c.getContext("2d");
+        c.setAttribute("Height",CanvasH);
+        c.setAttribute("Width",CanvasW);
+        var tab; // Tableau des données de la génération affichée et en cours de génération
+        var xInput = parseInt(document.getElementById("Largeur").value);
+        var yInput = parseInt(document.getElementById("Hauteur").value);
+        var stopGen=false; //Arret de la génération
+        
+        //Compteurs
+        var nbGen=0;
+        var nbVie=0;
+        var nbMourant=0;
+        
+		function ChangeSpeed(speed){
+			var maxspeed = 10
+			var minspeed = 500
+			var perc = speed / 100
+			
+			var m = (maxspeed-minspeed)/(1-0)
+			var b = minspeed
+					
+			vit=Math.round((m*perc)+b)
+			document.getElementById("speed").innerText = speed + "% / " + vit + " ms delay"
+		}
+		
+		function KeepRatio(v){
+			x = document.getElementById("Largeur")
+			y = document.getElementById("Hauteur")
+			
+			if(v=="x"){
+				y.value = x.value / 2
+			}
+			else{
+				x.value = y.value * 2
+			}
+		}
+		
+        function Generer(){ 
+            //Nombre de cellules en largeur (X) et hauteur (Y)
+            xInput = parseInt(document.getElementById("Largeur").value);
+            yInput = parseInt(document.getElementById("Hauteur").value);
+            
+            //Génération 0
+            tab = new Array();
+            tab = dayOne(xInput,yInput);
+            nbGen= 0;
+            DrawMyLife(xInput,yInput);
+            
+            //Que la vie soit!
+            Stop(false);
+            setTimeout(HistoireDeLaVie,vit);
+        }
+        
+        function dayOne(h,w){
+            var tab = new Array;
+            
+            for(i=0;i<h;i++){ // Creation des lignes horizontales
+                tab[i] = new Array;
+                for(j=0;j<w;j++){ // Creation des lignes verticales
+                    tab[i][j]=lifeIsRandom();
+                }
+            }
+            
+            return tab;
+        }
+        
+        function lifeIsRandom(){
+            var nb;
+            nb = Math.random();
+            var proba = document.getElementById("proba").value;
+            if(proba < 0 || proba > 1 || proba==""){
+                proba = Math.random();
+            }
+            
+            if(nb<(proba)){
+                return 1;
+            }
+            else{
+                return 0;
+            }
+        }
+        
+        function HistoireDeLaVie(){
+            document.getElementById("nbGen").innerHTML=("Nombre de générations : " + parseInt(nbGen));
+            document.getElementById("nbVie").innerHTML=("Nombre de vivants : " + parseInt(nbVie));
+            document.getElementById("nbMourant").innerHTML=("Nombre de mourants : " + parseInt(nbMourant));
+            
+            if(!stopGen){
+                NewGeneration(xInput,yInput);
+                DrawMyLife(xInput,yInput);
+                nbGen+=1;
+				setTimeout(HistoireDeLaVie,vit);
+				
+				if(nbVie <= 0){
+					Stop(1);
+				}
+            }
+        }
+        
+        function NewGeneration(h,w){            
+            for(i=0;i<h;i++){
+                for(j=0;j<w;j++){
+                    var voisins = voisinage(i,j);
+                    var moi = tab[i][j];
+                    /*
+                    0=Mort
+                    1=Vivant
+                    2=Va mourir
+                    3=Va vivre
+                    */
+                    
+                    if(moi==1 && voisins == 2){ //Si je suis en vie et j'ai 2 voisins
+                        if(tab[i][j]==1){
+                            //Qu'est ce qu'on dit à la mort? Not today...
+                        }
+                    }
+                    else if (moi==0 && voisins==3){ //Si je suis mort et j'ai 3 voisins
+                        tab[i][j]=3;
+                    }
+                    else if(moi==1 && (voisins<2 || voisins>3)){
+                         tab[i][j]=2; //Meurs, pourriture communiste!
+                    }
+                }
+            }
+        }
+                
+        function voisinage(i,j){  //i,j = position centrale | iv,jv = positions voisins
+            var compteur=0;
+            
+            for(iv=-1;iv<=1;iv++){
+                for(jv=-1;jv<=1;jv++){
+                    if (!(iv==0&&jv==0)){ // Je ne suis pas mon voisin!
+                        
+                        itest=i+iv;
+                        if(itest<0){
+                            itest=itest+xInput;
+                        }
+                        else if(itest>=xInput){
+                            itest=itest-xInput;
+                        }
+
+                        jtest=j+jv;
+                        if(jtest<0){
+                            jtest=jtest+yInput;
+                        }
+                        else if(jtest>=yInput){
+                            jtest=jtest-yInput;
+                        }
+
+						if(j==49){
+							var stopValTmp = 0
+						}
+							
+                        if(tab[itest][jtest]==1 || tab[itest][jtest]==2){ //si vivant ou mourrant, voisin+1
+                            compteur++;
+                        }
+                    }
+                }
+            }
+            
+            return compteur;
+        }
+        
+        function DrawMyLife(xInput,yInput){
+            //Initialisation
+            ctx.clearRect(0, 0, c.width, c.height);
+            nbVie=0;
+            nbMourant=0;
+
+            //Taille d'une cellule
+            tW = parseInt(CanvasW/xInput);
+            tH = parseInt(CanvasH/yInput);
+            
+            for(y=0;y<yInput;y++){
+                for(x=0;x<xInput;x++){
+                    //Application de la vie/mort
+                    if(tab[x][y]==3){tab[x][y]=1};
+                    
+                    //0,0 de la cellule
+                    var departX = x*tW;
+                    var departY = y*tH;
+                    
+                    //Tracage du losange
+                    if((tab[x][y]==2)|| (tab[x][y]==1)){
+                        ctx.beginPath();
+                        ctx.moveTo(departX,departY+(tH/2));
+                        ctx.lineTo(departX+(tW/2),departY);
+                        ctx.lineTo(departX+tW,departY+(tH/2));
+                        ctx.lineTo(departX+(tW/2),departY+tH);
+						
+                        //Vient de mourir
+                        if(tab[x][y]==2){
+                            tab[x][y]=0;
+                            //ctx.closePath();
+                            //ctx.stroke();
+							ctx.fillStyle= "lightgray";
+                            ctx.fill();
+                            nbMourant++;
+                        }
+                        //Est vivant
+                        if(tab[x][y]==1){
+                            ctx.fillStyle="blue";
+                            ctx.fill();
+                            nbVie++;
+                        }
+                    }
+                }
+            }
+        } 
+        
+        function testVoisin(v){            
+            var d = new Date();
+            var t = d.getTime();
+            nbGen=0;
+            
+			if(v==3){
+				xInput=34;
+				yInput=17;
+			}
+			else if(v==5){
+				xInput=40;
+				yInput=20;
+			}
+			else{
+				xInput=28;
+				yInput=14;
+			}			
+			
+            tab = dayOne(xInput,yInput);
+            for(y=0;y<yInput;y++){
+                for(x=0;x<xInput;x++){
+                    tab[x][y]=0;
+                }
+            }
+            if(v==1){
+                tab[3][3]=1;
+                tab[4][3]=1;
+                tab[5][3]=1;
+                tab[2][4]=1;
+                tab[3][4]=1;
+                tab[4][4]=1;
+				
+				tab[9][4]=1;
+                tab[10][4]=1;
+                tab[11][4]=1;
+				
+				tab[15][3]=1;
+                tab[16][3]=1;
+                tab[15][4]=1;
+				tab[16][4]=1;
+				
+				tab[21][3]=1;
+                tab[22][3]=1;
+                tab[20][4]=1;
+				tab[23][4]=1;
+				tab[21][5]=1;
+				tab[22][5]=1;				
+            }
+            else if(v==2){
+                tab[6][6]=1;
+                tab[6][5]=1;
+                tab[6][7]=1;
+                tab[5][6]=1;
+                tab[7][6]=1; 
+            }
+            else if(v==3){  //pulsar
+				tab[4][2]=1;
+				tab[5][2]=1;
+				tab[6][2]=1;
+				
+				tab[10][2]=1;
+				tab[11][2]=1;
+				tab[12][2]=1;
+				
+				tab[2][4]=1;
+				tab[2][5]=1;
+				tab[2][6]=1;
+				
+				tab[7][4]=1;
+				tab[7][5]=1;
+				tab[7][6]=1;
+				
+				tab[9][4]=1;
+				tab[9][5]=1;
+				tab[9][6]=1;
+				
+				tab[14][4]=1;
+				tab[14][5]=1;
+				tab[14][6]=1;
+				
+				tab[4][7]=1;
+				tab[5][7]=1;
+				tab[6][7]=1;
+				
+				tab[10][7]=1;
+				tab[11][7]=1;
+				tab[12][7]=1;
+				
+				tab[4][9]=1;
+				tab[5][9]=1;
+				tab[6][9]=1;
+				
+				tab[10][9]=1;
+				tab[11][9]=1;
+				tab[12][9]=1;
+				
+				tab[4][14]=1;
+				tab[5][14]=1;
+				tab[6][14]=1;
+				
+				tab[10][14]=1;
+				tab[11][14]=1;
+				tab[12][14]=1;
+				
+				tab[2][10]=1;
+				tab[2][11]=1;
+				tab[2][12]=1;
+				
+				tab[7][10]=1;
+				tab[7][11]=1;
+				tab[7][12]=1;
+				
+				tab[9][10]=1;
+				tab[9][11]=1;
+				tab[9][12]=1;
+				
+				tab[14][10]=1;
+				tab[14][11]=1;
+				tab[14][12]=1;
+            }
+			else if(v==4){ //Glider
+				tab[4][6]=1;
+				tab[4][7]=1;
+				tab[4][8]=1;
+				tab[3][8]=1;
+				tab[2][7]=1;
+			}
+			else if(v==5){ //Spaceship
+				tab[6][5]=1;
+				tab[7][5]=1;
+				tab[8][5]=1;
+				tab[9][5]=1;
+				tab[5][6]=1;
+				tab[9][6]=1;
+				tab[9][7]=1;
+				tab[5][8]=1;
+				tab[8][8]=1;
+			}
+			else{
+				alert("erreur!");
+			}
+            Stop(false);
+            DrawMyLife(xInput,yInput);
+            setTimeout(HistoireDeLaVie,vit);
+        }
+        
+        function Stop(etat){
+            if(!etat){
+                stopGen=false;
+                document.getElementById("generer").setAttribute("Disabled",true);
+				Array.from(document.getElementsByClassName("debug")).forEach(
+					function(e){
+						e.setAttribute("Disabled",true);
+					}
+				)
+            }
+            else{                
+                stopGen=true;
+                document.getElementById("generer").removeAttribute("Disabled");
+				Array.from(document.getElementsByClassName("debug")).forEach(
+					function(e){
+						e.removeAttribute("Disabled");
+					}
+				)
+            }
+        }
+    </script>
+</html>
